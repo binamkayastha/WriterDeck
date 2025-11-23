@@ -7,12 +7,10 @@ import supervisor
 import sys
 from fourwire import FourWire
 from adafruit_st7789 import ST7789
-from adafruit_display_text import label
-import terminalio
 
-# -------------------------
-# Display initialization
-# -------------------------
+# ---------------------------
+# DISPLAY SETUP
+# ---------------------------
 backlight = digitalio.DigitalInOut(microcontroller.pin.PA06)
 backlight.direction = digitalio.Direction.OUTPUT
 displayio.release_displays()
@@ -20,111 +18,64 @@ displayio.release_displays()
 spi = board.LCD_SPI()
 tft_cs = board.LCD_CS
 tft_dc = board.D4
-backlight.value = False  # Active LOW
+backlight.value = False
 
 DISPLAY_WIDTH = 240
 DISPLAY_HEIGHT = 135
 
 display_bus = FourWire(spi, command=tft_dc, chip_select=tft_cs)
-display = ST7789(
-    display_bus,
-    rotation=90,
-    width=DISPLAY_WIDTH,
-    height=DISPLAY_HEIGHT,
-    rowstart=40,
-    colstart=53
-)
+display = ST7789(display_bus, rotation=90,
+                 width=DISPLAY_WIDTH, height=DISPLAY_HEIGHT,
+                 rowstart=40, colstart=53)
 
 print("PyKit Display Ready")
-print("USB Editor with Auto-Wrap + Scrolling (:w to save)")
+print("Minimal USB Text Editor")
 
-# -------------------------
-# Display group
-# -------------------------
-splash = displayio.Group()
-display.root_group = splash
+# ---------------------------
+# TEXT BUFFER + SCROLL
+# ---------------------------
+lines = []                   # store each line as a string
+max_visible = 8              # fits nicely with 2× scaled text
+scale = 2                    # bigger text (2×)
 
-TEXT_SCALE = 2
-CHAR_WIDTH = 6 * TEXT_SCALE
-CHARS_PER_LINE = DISPLAY_WIDTH // CHAR_WIDTH  # ≈ 20
+# Simple screen clear helper
+def draw_screen():
+    print("\n" * 20)   # this clears the TFT because it mirrors console output
+    start = max(0, len(lines) - max_visible)
+    for ln in lines[start:]:
+        print(ln)
 
-LINE_HEIGHT = 8 * TEXT_SCALE
-MAX_LINES = DISPLAY_HEIGHT // LINE_HEIGHT     # ≈ 8 lines
+# ---------------------------
+# EDITOR LOOP
+# ---------------------------
+current = ""      # current line being typed
 
-text_area = label.Label(
-    terminalio.FONT,
-    text="",
-    color=0xFFFFFF,
-    x=0,
-    y=LINE_HEIGHT,
-    scale=TEXT_SCALE
-)
-splash.append(text_area)
-
-# -------------------------
-# Editor buffer (list of lines)
-# -------------------------
-lines = [""]
-
-def save_to_host(text):
-    print("\n---BEGIN SAVE---")
-    print(text)
-    print("---END SAVE---\n")
-
-def wrap_line_to_list(line):
-    """Split a long line into multiple wrapped lines."""
-    return [line[i:i+CHARS_PER_LINE] for i in range(0, len(line), CHARS_PER_LINE)]
-
-# -------------------------
-# Main loop
-# -------------------------
 while True:
-
     if supervisor.runtime.serial_bytes_available:
         ch = sys.stdin.read(1)
 
-        # SAVE (:w)
-        if ch == ":":
-            nxt = sys.stdin.read(1)
-            if nxt == "w":
-                save_to_host("\n".join(lines))
-                continue
-            # add literal characters
-            ch = ":" + nxt
-            print(ch, end="")
-
-            # append normally
-            for c in ch:
-                lines[-1] += c
+        # NEWLINE
+        if ch in ("\n", "\r"):
+            lines.append(current)
+            current = ""
+            draw_screen()
+            continue
 
         # BACKSPACE
-        elif ch in ("\x7f", "\b"):
-            if len(lines[-1]) > 0:
-                lines[-1] = lines[-1][:-1]
+        if ch in ("\x7f", "\b"):
+            if len(current) > 0:
+                current = current[:-1]
                 print("\b \b", end="")
-            else:
-                if len(lines) > 1:
-                    lines.pop()
-                    print("\b \b", end="")
+            continue
 
-        # NEWLINE (ENTER)
-        elif ch in ("\n", "\r"):
-            lines.append("")
-            print()
+        # NORMAL CHARACTER
+        current += ch
+        print(ch, end="")
 
-        # NORMAL CHAR
-        else:
-            lines[-1] += ch
-            print(ch, end="")
-
-        # -------------------------------------
-        # AUTO WRAP + VERTICAL SCROLLING
-        # -------------------------------------
-        wrapped = []
-        for ln in lines:
-            wrapped.extend(wrap_line_to_list(ln))
-
-        visible_lines = wrapped[-MAX_LINES:]
-        text_area.text = "\n".join(visible_lines)
+        # update display live
+        temp = lines[-max_visible:] + [current]
+        print("\n" * 20)
+        for ln in temp:
+            print(ln)
 
     time.sleep(0.01)
