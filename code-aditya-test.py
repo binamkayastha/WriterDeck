@@ -7,6 +7,8 @@ import supervisor
 import sys
 from fourwire import FourWire
 from adafruit_st7789 import ST7789
+from adafruit_display_text.label import Label
+import terminalio
 
 # ---------------------------
 # DISPLAY SETUP
@@ -28,27 +30,33 @@ display = ST7789(display_bus, rotation=90,
                  width=DISPLAY_WIDTH, height=DISPLAY_HEIGHT,
                  rowstart=40, colstart=53)
 
-print("PyKit Display Ready")
-print("Minimal USB Text Editor")
+# ---------------------------
+# TEXT GROUP + LABEL
+# ---------------------------
+splash = displayio.Group()
+display.root_group = splash
+
+text_label = Label(terminalio.FONT, text="", color=0xFFFFFF, scale=2)  
+text_label.x = 0
+text_label.y = 20
+splash.append(text_label)
 
 # ---------------------------
-# TEXT BUFFER + SCROLL
+# EDITOR STATE
 # ---------------------------
-lines = []                   # store each line as a string
-max_visible = 8              # fits nicely with 2× scaled text
-scale = 2                    # bigger text (2×)
+buffer = ""
+lines = []
+max_visible = 6    # because font is bigger (scale=2)
 
-# Simple screen clear helper
-def draw_screen():
-    print("\n" * 20)   # this clears the TFT because it mirrors console output
+def redraw():
     start = max(0, len(lines) - max_visible)
-    for ln in lines[start:]:
-        print(ln)
+    visible = lines[start:]
+    text_label.text = "\n".join(visible)
 
 # ---------------------------
-# EDITOR LOOP
+# MAIN LOOP
 # ---------------------------
-current = ""      # current line being typed
+current = ""
 
 while True:
     if supervisor.runtime.serial_bytes_available:
@@ -58,7 +66,8 @@ while True:
         if ch in ("\n", "\r"):
             lines.append(current)
             current = ""
-            draw_screen()
+            redraw()
+            print()
             continue
 
         # BACKSPACE
@@ -66,16 +75,14 @@ while True:
             if len(current) > 0:
                 current = current[:-1]
                 print("\b \b", end="")
+                redraw()
             continue
 
-        # NORMAL CHARACTER
+        # NORMAL CHAR
         current += ch
         print(ch, end="")
 
-        # update display live
         temp = lines[-max_visible:] + [current]
-        print("\n" * 20)
-        for ln in temp:
-            print(ln)
+        text_label.text = "\n".join(temp)
 
     time.sleep(0.01)
