@@ -34,23 +34,21 @@ print("BIG TEXT USB Text Editor")
 # ---------------------------
 # TEXT CONFIG
 # ---------------------------
-scale = 1                        # <<===== MUCH BIGGER TEXT
-char_width = 6 * scale           # approx width of 1 char in console font
+scale = 3
+char_width = 6 * scale
 max_chars = DISPLAY_WIDTH // char_width
 
-lines = []                       # wrapped lines for display
-logical = [""]                   # stores actual unwrapped lines
+lines = []             # wrapped lines
+logical = [""]         # original lines
 max_visible = DISPLAY_HEIGHT // (8 * scale)
 
 # ---------------------------
 # HELPERS
 # ---------------------------
 def wrap_line(text):
-    """Return list of wrapped segments for one logical line."""
     return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
 
 def rebuild_wrapped():
-    """Rebuild wrapped 'lines' from logical lines."""
     global lines
     out = []
     for ln in logical:
@@ -58,26 +56,49 @@ def rebuild_wrapped():
     lines = out
 
 def draw_screen():
-    print("\n" * 20)  # clear
+    print("\n" * 20)
     start = max(0, len(lines) - max_visible)
     for ln in lines[start:]:
         print(ln)
 
+# <<< SAVE ADDED >>>
+def handle_save(cmd):
+    parts = cmd.split()
+    if len(parts) == 2:
+        filename = parts[1]
+        # send file to host as a block of text
+        print("<<BEGIN_SAVE " + filename + ">>")
+        for ln in logical:
+            print(ln)
+        print("<<END_SAVE>>")
+        print(f"[Saved to host: {filename}]")
+    else:
+        print("[Usage: :save filename.txt]")
+
 # ---------------------------
-# EDITOR LOOP
+# MAIN LOOP
 # ---------------------------
 while True:
     if supervisor.runtime.serial_bytes_available:
         ch = sys.stdin.read(1)
 
-        # --- NEWLINE ---
+        # detect SAVE command live
+        if logical[-1].startswith(":save") and ch in ("\n", "\r"):
+            cmd = logical[-1]
+            logical[-1] = ""
+            handle_save(cmd)
+            rebuild_wrapped()
+            draw_screen()
+            continue
+
+        # NEWLINE
         if ch in ("\n", "\r"):
             logical.append("")
             rebuild_wrapped()
             draw_screen()
             continue
 
-        # --- BACKSPACE ---
+        # BACKSPACE
         if ch in ("\x7f", "\b"):
             if len(logical[-1]) > 0:
                 logical[-1] = logical[-1][:-1]
@@ -85,7 +106,7 @@ while True:
                 draw_screen()
             continue
 
-        # --- NORMAL CHARACTER ---
+        # NORMAL CHARACTER
         logical[-1] += ch
         rebuild_wrapped()
         draw_screen()
