@@ -7,8 +7,6 @@ import supervisor
 import sys
 from fourwire import FourWire
 from adafruit_st7789 import ST7789
-from adafruit_display_text.label import Label
-import terminalio
 
 # ---------------------------
 # DISPLAY SETUP
@@ -25,96 +23,71 @@ backlight.value = False
 DISPLAY_WIDTH = 240
 DISPLAY_HEIGHT = 135
 
-display_bus = FourWire(
-    spi,
-    command=tft_dc,
-    chip_select=tft_cs
-)
-display = ST7789(
-    display_bus,
-    rotation=90,
-    width=DISPLAY_WIDTH,
-    height=DISPLAY_HEIGHT,
-    rowstart=40,
-    colstart=53
-)
+display_bus = FourWire(spi, command=tft_dc, chip_select=tft_cs)
+display = ST7789(display_bus, rotation=90,
+                 width=DISPLAY_WIDTH, height=DISPLAY_HEIGHT,
+                 rowstart=40, colstart=53)
 
-print("PyKit Display Ready: ")
-print("USB Text Editor: big text + scroll")
+print("PyKit Display Ready")
+print("BIG TEXT USB Text Editor")
 
 # ---------------------------
-# LABEL FOR BIG TEXT
+# TEXT CONFIG
 # ---------------------------
-splash = displayio.Group()
-display.root_group = splash
+scale = 3                        # <<===== MUCH BIGGER TEXT
+char_width = 6 * scale           # approx width of 1 char in console font
+max_chars = DISPLAY_WIDTH // char_width
 
-TEXT_SCALE = 2           # make this 3 or 4 for even bigger
-CHAR_W = 6 * TEXT_SCALE  # terminalio font is ~6 px wide
-CHAR_H = 8 * TEXT_SCALE
-
-CHARS_PER_LINE = DISPLAY_WIDTH // CHAR_W
-MAX_LINES = DISPLAY_HEIGHT // CHAR_H
-
-text_label = Label(
-    terminalio.FONT,
-    text="",
-    color=0xFFFFFF,
-    scale=TEXT_SCALE,
-)
-text_label.x = 0
-text_label.y = CHAR_H      # first baseline
-splash.append(text_label)
+lines = []                       # wrapped lines for display
+logical = [""]                   # stores actual unwrapped lines
+max_visible = DISPLAY_HEIGHT // (8 * scale)
 
 # ---------------------------
-# EDITOR STATE
+# HELPERS
 # ---------------------------
-buffer = ""   # whole text, including '\n'
+def wrap_line(text):
+    """Return list of wrapped segments for one logical line."""
+    return [text[i:i+max_chars] for i in range(0, len(text), max_chars)]
 
+def rebuild_wrapped():
+    """Rebuild wrapped 'lines' from logical lines."""
+    global lines
+    out = []
+    for ln in logical:
+        out.extend(wrap_line(ln))
+    lines = out
 
-def recompute_visible_text():
-    """Wrap buffer to screen width and keep only last MAX_LINES."""
-    # split into logical lines first
-    logical_lines = buffer.split("\n")
-
-    wrapped = []
-    for ln in logical_lines:
-        # wrap long lines at CHARS_PER_LINE
-        if ln == "":
-            wrapped.append("")  # preserve blank lines
-        else:
-            for i in range(0, len(ln), CHARS_PER_LINE):
-                wrapped.append(ln[i:i + CHARS_PER_LINE])
-
-    # keep last MAX_LINES for display
-    visible = wrapped[-MAX_LINES:] if len(wrapped) > MAX_LINES else wrapped
-    text_label.text = "\n".join(visible)
-
+def draw_screen():
+    print("\n" * 20)  # clear
+    start = max(0, len(lines) - max_visible)
+    for ln in lines[start:]:
+        print(ln)
 
 # ---------------------------
-# MAIN LOOP
+# EDITOR LOOP
 # ---------------------------
 while True:
     if supervisor.runtime.serial_bytes_available:
         ch = sys.stdin.read(1)
 
-        # BACKSPACE
-        if ch == "\x7f" or ch == "\b":
-            if len(buffer) > 0:
-                buffer = buffer[:-1]
-                print("\b \b", end="")   # USB console
-                recompute_visible_text()
+        # --- NEWLINE ---
+        if ch in ("\n", "\r"):
+            logical.append("")
+            rebuild_wrapped()
+            draw_screen()
             continue
 
-        # NEWLINE
-        if ch == "\n" or ch == "\r":
-            buffer += "\n"
-            print()                      # USB console newline
-            recompute_visible_text()
+        # --- BACKSPACE ---
+        if ch in ("\x7f", "\b"):
+            if len(logical[-1]) > 0:
+                logical[-1] = logical[-1][:-1]
+                rebuild_wrapped()
+                draw_screen()
             continue
 
-        # NORMAL CHAR
-        buffer += ch
-        print(ch, end="")                # USB console echo
-        recompute_visible_text()
+        # --- NORMAL CHARACTER ---
+        logical[-1] += ch
+        rebuild_wrapped()
+        draw_screen()
 
     time.sleep(0.01)
