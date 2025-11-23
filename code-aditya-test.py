@@ -36,13 +36,17 @@ display = ST7789(
 )
 
 print("PyKit Display Ready")
-print("USB Editor Ready (:w to save)")
+print("USB Editor (type :w to output full text)")
 
 # -------------------------
-# Text area setup (BIG TEXT)
+# Display text (single line, big)
 # -------------------------
 splash = displayio.Group()
 display.root_group = splash
+
+TEXT_SCALE = 2  # increase for bigger text
+CHAR_WIDTH = 6 * TEXT_SCALE  # approximate pixel width of one terminalio char
+CHARS_ON_SCREEN = DISPLAY_WIDTH // CHAR_WIDTH
 
 text_area = label.Label(
     terminalio.FONT,
@@ -50,9 +54,8 @@ text_area = label.Label(
     color=0xFFFFFF,
     x=0,
     y=20,
-    scale=2     # << change this (1–4) to adjust text size
+    scale=TEXT_SCALE
 )
-
 splash.append(text_area)
 
 # -------------------------
@@ -60,17 +63,14 @@ splash.append(text_area)
 # -------------------------
 buffer = ""
 
-def save_text(text):
-    """Save editor buffer to CIRCUITPY filesystem."""
-    try:
-        with open("/code_output.txt", "w") as f:
-            f.write(text)
-        print("\n[SAVED] to code_output.txt")
-    except Exception as e:
-        print("\nSave error:", e)
+def output_to_host(text):
+    """Print text back to host instead of saving to CIRCUITPY."""
+    print("\n---BEGIN SAVE---")
+    print(text)
+    print("---END SAVE---\n")
 
 # -------------------------
-# Main USB text editor loop
+# Main loop
 # -------------------------
 while True:
 
@@ -81,32 +81,28 @@ while True:
         if ch == ":":
             nxt = sys.stdin.read(1)
             if nxt == "w":
-                save_text(buffer)
+                output_to_host(buffer)
                 continue
-            # Not a save command → treat normally
             buffer += ch + nxt
-            print(ch + nxt, end="")
-            text_area.text = buffer[-500:]  # prevent overflow
-            continue
-
+            print(ch + nxt, end="")  # console echo
         # BACKSPACE
-        if ch in ("\x7f", "\b"):
+        elif ch in ("\x7f", "\b"):
             if len(buffer) > 0:
                 buffer = buffer[:-1]
-                print("\b \b", end="")
-                text_area.text = buffer[-500:]
-            continue
+                print("\b \b", end="")  # erase on host console
+        # NEWLINE (ignored for horizontal-only editor)
+        elif ch in ("\n", "\r"):
+            print()  # console newline only
+        else:
+            # NORMAL CHARACTER
+            buffer += ch
+            print(ch, end="")
 
-        # NEWLINE
-        if ch in ("\n", "\r"):
-            buffer += "\n"
-            print()
-            text_area.text = buffer[-500:]
-            continue
-
-        # NORMAL CHARACTER
-        buffer += ch
-        print(ch, end="")
-        text_area.text = buffer[-500:]
+        # --------------------------------------------------
+        # Horizontal scrolling for TFT display:
+        # show only the rightmost section of the current line
+        # --------------------------------------------------
+        visible = buffer[-CHARS_ON_SCREEN:]
+        text_area.text = visible
 
     time.sleep(0.01)
