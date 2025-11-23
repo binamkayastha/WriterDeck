@@ -34,7 +34,7 @@ print("BIG TEXT USB Text Editor")
 # ---------------------------
 # TEXT CONFIG
 # ---------------------------
-scale = 3                        # <<===== MUCH BIGGER TEXT
+scale = 1                        # <<===== MUCH BIGGER TEXT
 char_width = 6 * scale           # approx width of 1 char in console font
 max_chars = DISPLAY_WIDTH // char_width
 
