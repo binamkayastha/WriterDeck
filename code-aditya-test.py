@@ -36,24 +36,25 @@ display = ST7789(
 )
 
 print("PyKit Display Ready")
-print("USB Editor (type :w to output full text)")
+print("USB Editor (:w to save)")
 
 # -------------------------
-# Display text (single line, big)
+# Display group
 # -------------------------
 splash = displayio.Group()
 display.root_group = splash
 
-TEXT_SCALE = 2  # increase for bigger text
-CHAR_WIDTH = 6 * TEXT_SCALE  # approximate pixel width of one terminalio char
-CHARS_ON_SCREEN = DISPLAY_WIDTH // CHAR_WIDTH
+TEXT_SCALE = 2
+LINE_HEIGHT = 8 * TEXT_SCALE
+MAX_LINES = DISPLAY_HEIGHT // LINE_HEIGHT   # ≈ 8 lines
 
+# text Label
 text_area = label.Label(
     terminalio.FONT,
     text="",
     color=0xFFFFFF,
     x=0,
-    y=20,
+    y=LINE_HEIGHT,
     scale=TEXT_SCALE
 )
 splash.append(text_area)
@@ -62,9 +63,9 @@ splash.append(text_area)
 # Editor buffer
 # -------------------------
 buffer = ""
+lines = [""]  # Start with one empty line
 
 def output_to_host(text):
-    """Print text back to host instead of saving to CIRCUITPY."""
     print("\n---BEGIN SAVE---")
     print(text)
     print("---END SAVE---\n")
@@ -77,32 +78,41 @@ while True:
     if supervisor.runtime.serial_bytes_available:
         ch = sys.stdin.read(1)
 
-        # SAVE COMMAND (:w)
+        # SAVE COMMAND :w
         if ch == ":":
             nxt = sys.stdin.read(1)
             if nxt == "w":
                 output_to_host(buffer)
                 continue
             buffer += ch + nxt
-            print(ch + nxt, end="")  # console echo
+            print(ch + nxt, end="")
         # BACKSPACE
         elif ch in ("\x7f", "\b"):
             if len(buffer) > 0:
                 buffer = buffer[:-1]
-                print("\b \b", end="")  # erase on host console
-        # NEWLINE (ignored for horizontal-only editor)
+            if len(lines[-1]) > 0:
+                lines[-1] = lines[-1][:-1]
+                print("\b \b", end="")
+            else:
+                # remove empty line
+                if len(lines) > 1:
+                    lines.pop()
+                    print("\b \b", end="")
+        # NEWLINE (ENTER)
         elif ch in ("\n", "\r"):
-            print()  # console newline only
+            buffer += "\n"
+            lines.append("")   # start new empty line
+            print()            # new line in USB console
+        # NORMAL CHAR
         else:
-            # NORMAL CHARACTER
             buffer += ch
+            lines[-1] += ch
             print(ch, end="")
 
-        # --------------------------------------------------
-        # Horizontal scrolling for TFT display:
-        # show only the rightmost section of the current line
-        # --------------------------------------------------
-        visible = buffer[-CHARS_ON_SCREEN:]
-        text_area.text = visible
+        # -------------------------
+        #   Vertical scrolling on TFT
+        # -------------------------
+        visible_lines = lines[-MAX_LINES:]
+        text_area.text = "\n".join(visible_lines)
 
     time.sleep(0.01)
