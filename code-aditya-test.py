@@ -36,7 +36,7 @@ display = ST7789(
 )
 
 print("PyKit Display Ready")
-print("USB Editor (:w to save)")
+print("USB Editor with Auto-Wrap + Scrolling (:w to save)")
 
 # -------------------------
 # Display group
@@ -45,10 +45,12 @@ splash = displayio.Group()
 display.root_group = splash
 
 TEXT_SCALE = 2
-LINE_HEIGHT = 8 * TEXT_SCALE
-MAX_LINES = DISPLAY_HEIGHT // LINE_HEIGHT   # ≈ 8 lines
+CHAR_WIDTH = 6 * TEXT_SCALE
+CHARS_PER_LINE = DISPLAY_WIDTH // CHAR_WIDTH  # ≈ 20
 
-# text Label
+LINE_HEIGHT = 8 * TEXT_SCALE
+MAX_LINES = DISPLAY_HEIGHT // LINE_HEIGHT     # ≈ 8 lines
+
 text_area = label.Label(
     terminalio.FONT,
     text="",
@@ -60,15 +62,18 @@ text_area = label.Label(
 splash.append(text_area)
 
 # -------------------------
-# Editor buffer
+# Editor buffer (list of lines)
 # -------------------------
-buffer = ""
-lines = [""]  # Start with one empty line
+lines = [""]
 
-def output_to_host(text):
+def save_to_host(text):
     print("\n---BEGIN SAVE---")
     print(text)
     print("---END SAVE---\n")
+
+def wrap_line_to_list(line):
+    """Split a long line into multiple wrapped lines."""
+    return [line[i:i+CHARS_PER_LINE] for i in range(0, len(line), CHARS_PER_LINE)]
 
 # -------------------------
 # Main loop
@@ -78,41 +83,48 @@ while True:
     if supervisor.runtime.serial_bytes_available:
         ch = sys.stdin.read(1)
 
-        # SAVE COMMAND :w
+        # SAVE (:w)
         if ch == ":":
             nxt = sys.stdin.read(1)
             if nxt == "w":
-                output_to_host(buffer)
+                save_to_host("\n".join(lines))
                 continue
-            buffer += ch + nxt
-            print(ch + nxt, end="")
+            # add literal characters
+            ch = ":" + nxt
+            print(ch, end="")
+
+            # append normally
+            for c in ch:
+                lines[-1] += c
+
         # BACKSPACE
         elif ch in ("\x7f", "\b"):
-            if len(buffer) > 0:
-                buffer = buffer[:-1]
             if len(lines[-1]) > 0:
                 lines[-1] = lines[-1][:-1]
                 print("\b \b", end="")
             else:
-                # remove empty line
                 if len(lines) > 1:
                     lines.pop()
                     print("\b \b", end="")
+
         # NEWLINE (ENTER)
         elif ch in ("\n", "\r"):
-            buffer += "\n"
-            lines.append("")   # start new empty line
-            print()            # new line in USB console
+            lines.append("")
+            print()
+
         # NORMAL CHAR
         else:
-            buffer += ch
             lines[-1] += ch
             print(ch, end="")
 
-        # -------------------------
-        #   Vertical scrolling on TFT
-        # -------------------------
-        visible_lines = lines[-MAX_LINES:]
+        # -------------------------------------
+        # AUTO WRAP + VERTICAL SCROLLING
+        # -------------------------------------
+        wrapped = []
+        for ln in lines:
+            wrapped.extend(wrap_line_to_list(ln))
+
+        visible_lines = wrapped[-MAX_LINES:]
         text_area.text = "\n".join(visible_lines)
 
     time.sleep(0.01)
